@@ -151,6 +151,11 @@ export const ApiService: IApiService = {
     return await HttpService.get<ApiEnvironment>(`/environments/${environmentId}`);
   },
 
+  async getEnvironments(): Promise<ApiEnvironment[]> {
+    const response = await HttpService.get<{ value: ApiEnvironment[] }>(`/environments?$top=${DEFAULT_PAGE_SIZE}`);
+    return response?.value || [];
+  },
+
   async getSecurityRequirements(definitionId: ApiDefinitionId): Promise<ApiAuthSchemeMetadata[]> {
     const response = await HttpService.get<{ value: ApiAuthSchemeMetadata[] }>(
       `/apis/${definitionId.apiName}/versions/${definitionId.versionName}/securityRequirements?$top=${DEFAULT_PAGE_SIZE}`

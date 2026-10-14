@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo } from 'react';
 import { Badge, Link, Spinner } from '@fluentui/react-components';
 import { useRecoilValue } from 'recoil';
 import { useNavigate } from 'react-router-dom';
@@ -9,12 +9,16 @@ import { ApiCard, type ApiCardApi } from '@/components/ApiCard';
 import { InfoTable } from '@/components/InfoTable';
 import MarkdownRenderer from '@/components/MarkdownRenderer';
 import { formatKindDisplay } from '@/utils/formatKind';
-import { getLifecycleBadgeColor, formatLifecycleStage } from '@/utils/badgeSystem';
+import { getLifecycleBadgeColor, formatLifecycleStage, getEnvironmentBadgeColor } from '@/utils/badgeSystem';
 import { apiAdapter } from '@/experiences/ApiList/apiAdapter';
 import { useMcpTransportTags } from '@/hooks/useMcpTransportTags';
+import { useApiEnvironments } from '@/hooks/useApiEnvironments';
 import { ENABLE_LIST_EVAL_BADGES } from '@/constants/featureFlags';
 import { ContributeCard } from '@/experiences/ContributeCard';
 import { ApiMetadata } from '@/types/api';
+import { ActiveFilterData } from '@/types/apiFilters';
+import { ApiEnvironment } from '@/types/apiEnvironment';
+import { ENVIRONMENT_FILTER_MAX_ASSETS, ENVIRONMENT_FILTER_TYPE } from '@/config/apiFilters';
 import { AppCapabilities } from '@/types/config';
 import { Layouts } from '@/types/layouts';
 import { apiListLayoutAtom } from '@/atoms/apiListLayoutAtom';
@@ -22,6 +26,14 @@ import { configAtom } from '@/atoms/configAtom';
 import { LocationsService } from '@/services/LocationsService';
 import EmptyStateMessage from '@/components/EmptyStateMessage';
 import styles from './ApiList.module.scss';
+
+function matchesEnvironmentFilter(environment: ApiEnvironment, filter: ActiveFilterData): boolean {
+  if (filter.operator === 'contains') {
+    const value = filter.value.toLowerCase();
+    return [environment.name, environment.title].some((text) => text?.toLowerCase().includes(value));
+  }
+  return environment.name === filter.value;
+}
 
 export const ApiList: React.FC = () => {
   const layout = useRecoilValue(apiListLayoutAtom);
@@ -32,14 +44,22 @@ export const ApiList: React.FC = () => {
   // Enrich active filters with schema info (e.g. multi-value/array properties) so the
   // service can build the correct OData query. This is derived per-render and kept out
   // of the atom to avoid interfering with filter equality checks (isActive/remove).
+  // Environment filters are applied client-side below, so they're excluded from the OData query.
   const enrichedFilters = useMemo(
     () =>
-      searchFilters.activeFilters.map((filter) => ({
-        ...filter,
-        isMultiValue: searchFilters.metadata[filter.type]?.isMultiValue,
-      })),
+      searchFilters.activeFilters
+        .filter((filter) => filter.type !== ENVIRONMENT_FILTER_TYPE)
+        .map((filter) => ({
+          ...filter,
+          isMultiValue: searchFilters.metadata[filter.type]?.isMultiValue,
+        })),
     [searchFilters.activeFilters, searchFilters.metadata]
   );
+  const environmentFilters = useMemo(
+    () => searchFilters.activeFilters.filter((filter) => filter.type === ENVIRONMENT_FILTER_TYPE),
+    [searchFilters.activeFilters]
+  );
+  const isEnvironmentFiltering = environmentFilters.length > 0;
   const apis = useApis({
     search: searchQuery.search,
     filters: enrichedFilters,
@@ -59,9 +79,41 @@ export const ApiList: React.FC = () => {
     return adapted;
   }, [apis.data]);
 
+  const apiNames = useMemo(() => adaptedApiList.map((a) => a.name), [adaptedApiList]);
+  // Environments are only shown in the table layout, so skip the per-API deployment calls
+  // for cards unless the environment filter needs them.
+  const apiEnvironments = useApiEnvironments(apiNames, layout !== Layouts.CARDS || isEnvironmentFiltering);
+
+  const loadedCount = apis.data?.length ?? 0;
+  const { hasNextPage, isFetchingNextPage, fetchNextPage } = apis;
+
+  // The environment filter can only be applied to loaded assets, so load every page (up to a cap).
+  useEffect(() => {
+    if (isEnvironmentFiltering && hasNextPage && !isFetchingNextPage && loadedCount < ENVIRONMENT_FILTER_MAX_ASSETS) {
+      void fetchNextPage();
+    }
+  }, [isEnvironmentFiltering, hasNextPage, isFetchingNextPage, loadedCount, fetchNextPage]);
+
+  const isCollectingEnvironments =
+    isEnvironmentFiltering &&
+    ((hasNextPage && loadedCount < ENVIRONMENT_FILTER_MAX_ASSETS) ||
+      isFetchingNextPage ||
+      apiNames.some((name) => !apiEnvironments[name]));
+
+  const visibleApiList = useMemo(() => {
+    if (!isEnvironmentFiltering) {
+      return adaptedApiList;
+    }
+    return adaptedApiList.filter((api) =>
+      apiEnvironments[api.name]?.some((env) =>
+        environmentFilters.some((filter) => matchesEnvironmentFilter(env, filter))
+      )
+    );
+  }, [adaptedApiList, apiEnvironments, environmentFilters, isEnvironmentFiltering]);
+
   const mcpNames = useMemo(
-    () => adaptedApiList.filter((a) => a.type?.toLowerCase() === 'mcp').map((a) => a.name),
-    [adaptedApiList]
+    () => visibleApiList.filter((a) => a.type?.toLowerCase() === 'mcp').map((a) => a.name),
+    [visibleApiList]
   );
   const mcpTransportTags = useMcpTransportTags(mcpNames);
 
@@ -105,6 +157,15 @@ export const ApiList: React.FC = () => {
       return null;
     }
 
+    if (isEnvironmentFiltering && !apis.isFetchingNextPage) {
+      return (
+        <div className={styles.loadMore}>
+          The environment filter was applied to the first {loadedCount} assets only.&nbsp;
+          <Link onClick={handleLoadMore}>Load more</Link>
+        </div>
+      );
+    }
+
     if (apis.isFetchingNextPage) {
       return (
         <div className={styles.loadMore}>
@@ -120,15 +181,20 @@ export const ApiList: React.FC = () => {
     );
   }
 
-  if (apis.isLoading) {
+  if (apis.isLoading || isCollectingEnvironments) {
     return <Spinner size="small" />;
   }
 
   const showContributeCard = config.capabilities?.includes(AppCapabilities.CONTRIBUTIONS)
     && !!config.contributions?.gitRepositoryUrl;
 
-  if (!apis.data?.length) {
-    return <EmptyStateMessage>Can't find any search results. Try a different search term.</EmptyStateMessage>;
+  if (!visibleApiList.length) {
+    return (
+      <>
+        <EmptyStateMessage>Can't find any search results. Try a different search term.</EmptyStateMessage>
+        {renderLoadMore()}
+      </>
+    );
   }
 
   if (layout === Layouts.CARDS) {
@@ -138,7 +204,7 @@ export const ApiList: React.FC = () => {
           {showContributeCard && (
             <ContributeCard url={config.contributions!.gitRepositoryUrl} />
           )}
-          {adaptedApiList.map((api) => (
+          {visibleApiList.map((api) => (
             <ApiCard
               key={api.name}
               api={api}
@@ -155,8 +221,17 @@ export const ApiList: React.FC = () => {
 
   return (
     <>
-      <InfoTable columnLabels={['Name', 'Summary', ...(ENABLE_LIST_EVAL_BADGES ? ['Score'] : []), 'Lifecycle stage', 'Type']}>
-        {adaptedApiList.map((api) => (
+      <InfoTable
+        columnLabels={[
+          'Name',
+          'Summary',
+          ...(ENABLE_LIST_EVAL_BADGES ? ['Score'] : []),
+          'Lifecycle stage',
+          'Environment',
+          'Type',
+        ]}
+      >
+        {visibleApiList.map((api) => (
           <InfoTable.Row key={api.name}>
             <InfoTable.Cell>
               <Link href={getApiUrl(api)} onClick={(e) => { e.preventDefault(); navigate(getApiUrl(api)); }}>{api.title}</Link>
@@ -182,6 +257,25 @@ export const ApiList: React.FC = () => {
                 <Badge appearance="tint" color={getLifecycleBadgeColor(api.lifecycleStage)} shape="circular">
                   {formatLifecycleStage(api.lifecycleStage)}
                 </Badge>
+              )}
+            </InfoTable.Cell>
+            <InfoTable.Cell>
+              {apiEnvironments[api.name] ? (
+                <div className={styles.environments}>
+                  {apiEnvironments[api.name]!.map((env) => (
+                    <Badge
+                      key={env.name}
+                      appearance="tint"
+                      color={getEnvironmentBadgeColor(env.kind)}
+                      shape="circular"
+                      title={env.description || env.kind}
+                    >
+                      {env.title || env.name}
+                    </Badge>
+                  ))}
+                </div>
+              ) : (
+                <Spinner size="extra-tiny" />
               )}
             </InfoTable.Cell>
             <InfoTable.Cell>

@@ -1,5 +1,14 @@
 import { FilterMetadata, FilterType } from '@/types/apiFilters';
 
+/**
+ * Environments are not a property of the API resource, so this filter can't be sent to the
+ * data plane as OData. ApiList applies it client-side using each API's deployments.
+ */
+export const ENVIRONMENT_FILTER_TYPE = 'environment';
+
+/** Upper bound on assets loaded to apply the environment filter client-side. */
+export const ENVIRONMENT_FILTER_MAX_ASSETS = 500;
+
 export const ApiFilterParameters: Record<FilterType, FilterMetadata> = {
   kind: {
     label: 'Asset type',

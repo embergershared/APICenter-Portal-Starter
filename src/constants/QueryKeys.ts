@@ -11,6 +11,7 @@ export enum QueryKeys {
   ApiDefinition = 'ApiDefinition',
   ApiDeployments = 'ApiDeployments',
   ApiDeploymentEnvironment = 'ApiDeploymentEnvironment',
+  ApiEnvironments = 'ApiEnvironments',
   ApiSpec = 'ApiSpec',
   ApiSpecUrl = 'ApiSpecUrl',
   ApiAuthScheme = 'ApiAuthScheme',
