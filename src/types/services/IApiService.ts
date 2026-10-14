@@ -34,6 +34,7 @@ export interface IApiService {
   getSpecificationLink(definitionId: ApiDefinitionId): Promise<string>;
   getSpecification(definitionId: ApiDefinitionId): Promise<string | undefined>;
   getEnvironment(environmentId: string): Promise<ApiEnvironment>;
+  getEnvironments(): Promise<ApiEnvironment[]>;
   getSecurityRequirements(definitionId: ApiDefinitionId): Promise<ApiAuthSchemeMetadata[]>;
   getSecurityCredentials(definitionId: ApiDefinitionId, schemeName: string): Promise<ApiAuthScheme>;
   getMetadataSchemas(): Promise<MetadataSchema[]>;

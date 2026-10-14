@@ -22,11 +22,8 @@ then
     # Load the azd environment variables
     "$REPOSITORY_ROOT/infra/hooks/load_azd_env.sh"
 
-    if [ "$USE_EXISTING_API_CENTER" = true ]; then
-        RESOURCE_GROUP="$AZURE_API_CENTER_RESOURCE_GROUP"
-    else
-        RESOURCE_GROUP="rg-$AZURE_ENV_NAME"
-    fi
+    # Set by the Bicep outputs for both a new and an existing API Center
+    RESOURCE_GROUP="$AZURE_API_CENTER_RESOURCE_GROUP"
 
     # Create a service principal and assign the required permissions
     appId=$AZURE_CLIENT_ID
@@ -64,7 +61,7 @@ then
     # Assign the required role to the current user and service principal
     userId=$(az ad signed-in-user show --query "id" -o tsv)
     roleDefinitionId="c7244dfb-f447-457d-b2ba-3999044d1706"
-    resourceId=$(az resource list --namespace "Microsoft.ApiCenter" --resource-type "services" -g $RESOURCE_GROUP --query "[].id" -o tsv)
+    resourceId=$(az resource show -g "$RESOURCE_GROUP" -n "$AZURE_API_CENTER" --resource-type "Microsoft.ApiCenter/services" --query "id" -o tsv)
 
     userAssigned=$(az role assignment create --role $roleDefinitionId --scope $resourceId --assignee $userId)
     spnAssigned=$(az role assignment create --role $roleDefinitionId --scope $resourceId --assignee $spnId)

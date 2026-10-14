@@ -1,10 +1,11 @@
 import { useCallback, useMemo } from 'react';
 import { isEqual } from 'lodash';
 import { useRecoilState } from 'recoil';
-import { ApiFilterParameters } from '@/config/apiFilters';
+import { ApiFilterParameters, ENVIRONMENT_FILTER_TYPE } from '@/config/apiFilters';
 import { ActiveFilterData, FilterMetadata, FilterType } from '@/types/apiFilters';
 import { apiSearchFiltersAtom } from '@/atoms/apiSearchFiltersAtom';
 import { useMetadataSchemas } from '@/hooks/useMetadataSchemas';
+import { useEnvironments } from '@/hooks/useApiEnvironments';
 
 interface ReturnType {
   activeFilters: ActiveFilterData[];
@@ -18,6 +19,7 @@ interface ReturnType {
 export function useSearchFilters(): ReturnType {
   const [activeFilters, setActiveFilters] = useRecoilState(apiSearchFiltersAtom);
   const metadataSchemas = useMetadataSchemas();
+  const environments = useEnvironments();
 
   const isActive = useCallback(
     (entry: ActiveFilterData) => {
@@ -45,7 +47,13 @@ export function useSearchFilters(): ReturnType {
   }, [setActiveFilters]);
 
   const metadata = useMemo(() => {
-    const combined: Record<FilterType, FilterMetadata> = { ...ApiFilterParameters };
+    const combined: Record<FilterType, FilterMetadata> = {
+      ...ApiFilterParameters,
+      [ENVIRONMENT_FILTER_TYPE]: {
+        label: 'Environment',
+        options: (environments.data ?? []).map((env) => ({ value: env.name, label: env.title || env.name })),
+      },
+    };
 
     if (metadataSchemas.data) {
       for (const [name, schema] of metadataSchemas.data) {
@@ -59,7 +67,7 @@ export function useSearchFilters(): ReturnType {
     }
 
     return combined;
-  }, [metadataSchemas.data]);
+  }, [metadataSchemas.data, environments.data]);
 
   return {
     activeFilters,

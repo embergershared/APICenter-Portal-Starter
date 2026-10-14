@@ -25,6 +25,12 @@
         },
         "staticAppLocation": {
             "value": "${AZURE_STATIC_APP_LOCATION}"
+        },
+        "staticAppName": {
+            "value": "${AZURE_STATIC_APP_NAME=}"
+        },
+        "deployToApiCenterResourceGroup": {
+            "value": "${DEPLOY_TO_API_CENTER_RESOURCE_GROUP=false}"
         }
     }
 }

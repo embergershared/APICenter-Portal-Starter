@@ -8,6 +8,7 @@ import type { BadgeProps } from '@fluentui/react-components';
  * Tier 3 – Lifecycle: tint   / semantic / circular  (production → success, preview → warning…)
  * Tier 4 – Transport: tint   / brand / circular    (Local, Remote, Local + Remote — same as sub-type)
  * Tier 5 – Tags:      tint   / informative / circular (user custom properties)
+ * Tier 6 – Environment: tint / semantic / circular (production → success, staging → warning…)
  */
 
 type SemanticColor = NonNullable<BadgeProps['color']>;
@@ -32,4 +33,16 @@ export function getLifecycleBadgeColor(stage?: string): SemanticColor {
 
 export function formatLifecycleStage(stage: string): string {
   return stage.charAt(0).toUpperCase() + stage.slice(1).toLowerCase();
+}
+
+const ENVIRONMENT_COLORS: Record<string, SemanticColor> = {
+  production: 'success',
+  staging: 'warning',
+  testing: 'brand',
+  development: 'informative',
+};
+
+export function getEnvironmentBadgeColor(kind?: string): SemanticColor {
+  if (!kind) return 'informative';
+  return ENVIRONMENT_COLORS[kind.toLowerCase()] ?? 'informative';
 }

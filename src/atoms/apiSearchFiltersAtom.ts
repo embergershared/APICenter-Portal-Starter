@@ -1,6 +1,6 @@
 import { atom } from 'recoil';
 import { ActiveFilterData, FilterOperator, FilterType } from '@/types/apiFilters';
-import { ApiFilterParameters } from '@/config/apiFilters';
+import { ApiFilterParameters, ENVIRONMENT_FILTER_TYPE } from '@/config/apiFilters';
 
 const OPERATOR_SEPARATOR = '::';
 
@@ -9,7 +9,7 @@ function deserializeFilters(): ActiveFilterData[] {
   const filters: ActiveFilterData[] = [];
 
   searchParams.forEach((rawValue, key) => {
-    const isKnownFilter = key in ApiFilterParameters;
+    const isKnownFilter = key in ApiFilterParameters || key === ENVIRONMENT_FILTER_TYPE;
     const isCustomProperty = key.startsWith('customProperties/');
 
     if (!isKnownFilter && !isCustomProperty) return;
@@ -43,6 +43,7 @@ export const apiSearchFiltersAtom = atom<ActiveFilterData[]>({
         // Collect all filter types (both static and dynamic)
         const allTypes = new Set<string>([
           ...Object.keys(ApiFilterParameters),
+          ENVIRONMENT_FILTER_TYPE,
           ...filters.map((f) => f.type),
         ]);
 

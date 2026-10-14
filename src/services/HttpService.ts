@@ -15,6 +15,18 @@ interface RequestOptions {
   skipWorkspacePrefix?: boolean;
 }
 
+const WORKSPACE_PATH = '/workspaces/default';
+
+/**
+ * Builds the Data API base URL. Service-level resources (e.g. metadata schemas) live outside the
+ * workspace, so a host configured with the workspace suffix has it removed for those requests.
+ */
+function getBaseUrl(dataApiHostName: string, options?: RequestOptions): string {
+  const host = dataApiHostName.replace(/\/+$/, '');
+  const serviceUrl = `https://${host.endsWith(WORKSPACE_PATH) ? host.slice(0, -WORKSPACE_PATH.length) : host}`;
+  return options?.skipWorkspacePrefix ? serviceUrl : serviceUrl + WORKSPACE_PATH;
+}
+
 async function makeRequest<T>(endpoint: string, method: string, payload?: any, options?: RequestOptions): Promise<T> {
   const { AuthService } = getRecoil(appServicesAtom);
   const config = getRecoil(configAtom);
@@ -33,13 +45,7 @@ async function makeRequest<T>(endpoint: string, method: string, payload?: any, o
     init.body = JSON.stringify(payload);
   }
 
-  let baseUrl = `https://${config.dataApiHostName}`;
-
-  // Append the default workspace to the base URL if it's not already there
-  // unless skipWorkspacePrefix is set
-  if (!options?.skipWorkspacePrefix && !config.dataApiHostName.includes('/workspaces/default')) {
-    baseUrl += '/workspaces/default';
-  }
+  const baseUrl = getBaseUrl(config.dataApiHostName, options);
 
   const response = await fetch(`${baseUrl}${endpoint}`, init);
 
@@ -108,10 +114,7 @@ export const HttpService = {
         (init.headers as Headers).append('Authorization', 'Bearer ' + accessToken);
       }
 
-      let baseUrl = `https://${config.dataApiHostName}`;
-      if (!options?.skipWorkspacePrefix && !config.dataApiHostName.includes('/workspaces/default')) {
-        baseUrl += '/workspaces/default';
-      }
+      const baseUrl = getBaseUrl(config.dataApiHostName, options);
 
       const response = await fetch(`${baseUrl}${endpoint}`, init);
 
@@ -145,10 +148,7 @@ export const HttpService = {
       (init.headers as Headers).append('Authorization', 'Bearer ' + accessToken);
     }
 
-    let baseUrl = `https://${config.dataApiHostName}`;
-    if (!options?.skipWorkspacePrefix && !config.dataApiHostName.includes('/workspaces/default')) {
-      baseUrl += '/workspaces/default';
-    }
+    const baseUrl = getBaseUrl(config.dataApiHostName, options);
 
     const response = await fetch(`${baseUrl}${endpoint}`, init);
 

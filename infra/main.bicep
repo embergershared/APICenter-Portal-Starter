@@ -9,16 +9,9 @@ targetScope = 'subscription'
 @description('Name of the the environment which is used to generate a short unique hash used in all resources.')
 param environmentName string
 
-// Limited to the following locations due to the availability of API Center
+// When a new API Center is created, the location must be a region where API Center is available.
 @minLength(1)
 @description('Primary location for all resources')
-@allowed([
-  'australiaeast'
-  'centralindia'
-  'eastus'
-  'uksouth'
-  'westeurope'
-])
 @metadata({
   azd: {
     type: 'location'
@@ -27,6 +20,9 @@ param environmentName string
 param location string
 
 param resourceGroupName string = ''
+
+@description('Deploy the portal into the existing API Center resource group instead of creating a new one. Requires `apiCenterExisted`.')
+param deployToApiCenterResourceGroup bool = false
 
 @description('Value indicating whether to use existing API Center instance or not.')
 param apiCenterExisted bool
@@ -84,9 +80,15 @@ var resourceToken = toLower(uniqueString(subscription().id, environmentName, loc
 #disable-next-line no-unused-vars
 var azdServiceName = 'staticapp-portal'
 
-// Organize resources in a resource group
-resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
-  name: !empty(resourceGroupName) ? resourceGroupName : '${abbrs.resourcesResourceGroups}${environmentName}'
+var useApiCenterResourceGroup = apiCenterExisted && deployToApiCenterResourceGroup
+var portalResourceGroupName = useApiCenterResourceGroup
+  ? apiCenterResourceGroupName
+  : (!empty(resourceGroupName) ? resourceGroupName : '${abbrs.resourcesResourceGroups}${environmentName}')
+
+// Organize resources in a resource group, unless the portal shares the existing API Center resource group,
+// which is owned by another deployment (for example the api-center-demo repository).
+resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = if (!useApiCenterResourceGroup) {
+  name: portalResourceGroupName
   location: location
   tags: tags
 }
@@ -98,7 +100,10 @@ resource rgApiCenter 'Microsoft.Resources/resourceGroups@2021-04-01' existing = 
 // Provision API Center
 module apiCenter './core/gateway/apicenter.bicep' = if (apiCenterExisted != true) {
   name: 'apicenter'
-  scope: rg
+  scope: resourceGroup(portalResourceGroupName)
+  dependsOn: [
+    rg
+  ]
   params: {
     name: !empty(apiCenterName) ? apiCenterName : 'apic-${resourceToken}'
     location: apiCenterRegion
@@ -114,7 +119,10 @@ resource apiCenterExisting 'Microsoft.ApiCenter/services@2024-03-15-preview' exi
 // Provision monitoring resource with Azure Monitor
 module monitoring './core/monitor/monitoring.bicep' = if (useMonitoring == true) {
   name: 'monitoring'
-  scope: rg
+  scope: resourceGroup(portalResourceGroupName)
+  dependsOn: [
+    rg
+  ]
   params: {
     location: location
     tags: tags
@@ -127,7 +135,11 @@ module monitoring './core/monitor/monitoring.bicep' = if (useMonitoring == true)
 // Provision Static Web Apps for each application
 module staticApp './core/host/staticwebapp.bicep' = {
   name: 'staticapp'
-  scope: rg
+  // Scoped by name: an existing declaration of the same group as rgApiCenter would be a duplicate in the template
+  scope: resourceGroup(portalResourceGroupName)
+  dependsOn: [
+    rg
+  ]
   params: {
     name: !empty(staticAppName) ? staticAppName : '${abbrs.webStaticSites}${resourceToken}-portal'
     location: staticAppLocation
@@ -141,11 +153,14 @@ module staticApp './core/host/staticwebapp.bicep' = {
 
 output AZURE_LOCATION string = location
 output AZURE_TENANT_ID string = tenant().tenantId
+// azd uses this to find the Static Web App, since a shared resource group carries another environment's azd-env-name tag.
+output AZURE_RESOURCE_GROUP string = portalResourceGroupName
+output DEPLOYED_TO_API_CENTER_RESOURCE_GROUP bool = useApiCenterResourceGroup
 
 output USE_EXISTING_API_CENTER bool = apiCenterExisted
 output AZURE_API_CENTER string = apiCenterExisted ? apiCenterExisting.name : apiCenter.outputs.name
 output AZURE_API_CENTER_LOCATION string = apiCenterExisted ? apiCenterExisting.location : apiCenter.outputs.location
-output AZURE_API_CENTER_RESOURCE_GROUP string = apiCenterExisted ? rgApiCenter.name : rg.name
+output AZURE_API_CENTER_RESOURCE_GROUP string = apiCenterExisted ? rgApiCenter.name : portalResourceGroupName
 
 output AZURE_STATIC_APP string = staticApp.outputs.name
 output AZURE_STATIC_APP_URL string = staticApp.outputs.uri
