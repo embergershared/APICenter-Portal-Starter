@@ -116,6 +116,27 @@ You have two options to deploy this self-hosted API Center Portal:
 
 1. Now, you're good to go! Push the code to the GitHub repository or manually run the GitHub Actions workflow to get your portal deployed.
 
+### Deploy next to the api-center-demo API Center
+
+The [api-center-demo](https://github.com/embergershared/api-center-demo) repository provisions the API Center and its related resources. To deploy this portal into that same resource group, using that API Center:
+
+1. Provision the api-center-demo environment first. This repository is expected next to it (`../api-center-demo`).
+1. Create the matching azd environment here. It reads the demo's azd environment (its default one, or `-DemoEnvironment <name>`) and sets the API Center name, region, resource group and subscription:
+
+    ```powershell
+    ./infra/scripts/Connect-ApiCenterDemo.ps1
+    ```
+
+1. Deploy:
+
+    ```powershell
+    azd up -e <demo environment>-portal
+    ```
+
+This only adds a Static Web App (`stapp-<loc>-<sub>-<env>-portal`) to the demo's resource group. It also creates an Entra ID app registration (`spn-<env>`) for sign-in, and grants it and you the **Azure API Center Data Reader** role on the API Center.
+
+> **WARNING**: Don't run `azd down` for this environment: it would delete the whole shared resource group, including the API Center. The `predown` hook blocks it and prints the commands to remove only the portal. Running `azd down` in api-center-demo removes the portal's Static Web App along with everything else, but not the app registration.
+
 ### Configure scoping filters
 
 By default, the portal displays all APIs from your API Center instance. You can configure your portal instance to filter out certain APIs by setting the `scopingFilter` property in the `public/config.example` file using [OData query syntax](https://learn.microsoft.com/en-us/graph/filter-query-parameter?tabs=http). For example:
